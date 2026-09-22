@@ -28,9 +28,7 @@ QUIX_BRIDGE_VERSION=0.1.0 sh install.sh
 .\install.ps1 -Version 0.1.0
 ```
 
-On Windows the script checks the signature of the installer and stops if it is not valid.
-
-Each release also carries `SHA256SUMS`. Check a manual download against it before you run it.
+The builds are not signed yet. Both scripts check the download against `SHA256SUMS` from the same release, and they stop if the hash does not match. Check a manual download against `SHA256SUMS` before you run it.
 
 ## Status
 
