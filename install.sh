@@ -87,6 +87,31 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 curl -fSL -o "${work}/${asset}" "$url" || fail "The download of $url failed."
 
+# ---- check the download before anything runs ------------------------------
+
+# SHA256SUMS comes from the same release. It must name this asset, and the hash must
+# match. Any other answer stops the script before the file installs.
+curl -fsSL -o "${work}/SHA256SUMS" "${base}/SHA256SUMS" \
+    || fail "The download of ${base}/SHA256SUMS failed. The script installed nothing."
+
+expected="$(awk -v name="$asset" '$2 == name || $2 == "*" name { print $1; exit }' "${work}/SHA256SUMS")"
+[ -n "$expected" ] || fail "SHA256SUMS names no line for $asset. The script installed nothing."
+
+if command -v sha256sum > /dev/null 2>&1; then
+    actual="$(sha256sum "${work}/${asset}" | cut -d ' ' -f 1)"
+elif command -v shasum > /dev/null 2>&1; then
+    actual="$(shasum -a 256 "${work}/${asset}" | cut -d ' ' -f 1)"
+else
+    fail "This machine has no sha256sum and no shasum, so the script cannot check the download."
+fi
+
+expected="$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')"
+actual="$(printf '%s' "$actual" | tr '[:upper:]' '[:lower:]')"
+[ "$actual" = "$expected" ] \
+    || fail "The SHA256 of $asset does not match SHA256SUMS. The script installed nothing. Download it again."
+echo "The SHA256 of $asset matches SHA256SUMS."
+echo "This build is unsigned. The script checked its SHA256 only."
+
 # ---- install --------------------------------------------------------------
 
 sudo_if_needed() {

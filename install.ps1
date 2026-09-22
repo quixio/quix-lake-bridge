@@ -55,14 +55,44 @@ $file = Join-Path $work $asset
 Write-Host "Download $url"
 Invoke-WebRequest -Uri $url -OutFile $file -UseBasicParsing
 
-# ---- check the signature before anything runs -----------------------------
+# ---- check the download before anything runs ------------------------------
 
-# An unsigned download is a download nobody can trust. The script stops.
-$signature = Get-AuthenticodeSignature -FilePath $file
-if ($signature.Status -ne 'Valid') {
-    throw "The signature of '$asset' is '$($signature.Status)'. The script installed nothing. Download the file again from the release page."
+# SHA256SUMS comes from the same release. It must name this asset, and the hash must
+# match. Any other answer stops the script before the file runs.
+$sums = Join-Path $work 'SHA256SUMS'
+Invoke-WebRequest -Uri "https://github.com/$Repo/releases/download/v$Version/SHA256SUMS" -OutFile $sums -UseBasicParsing
+$expected = $null
+foreach ($line in Get-Content -Path $sums) {
+    $parts = $line.Trim() -split '\s+'
+    if ($parts.Count -eq 2 -and $parts[1].TrimStart('*') -eq $asset) {
+        $expected = $parts[0]
+        break
+    }
 }
-Write-Host "The publisher is $($signature.SignerCertificate.Subject)."
+if (-not $expected) {
+    throw "SHA256SUMS names no line for '$asset'. The script installed nothing."
+}
+$actual = (Get-FileHash -Path $file -Algorithm SHA256).Hash
+if ($actual -ne $expected) {
+    throw "The SHA256 of '$asset' does not match SHA256SUMS. The script installed nothing. Download the file again from the release page."
+}
+Write-Host "The SHA256 of '$asset' matches SHA256SUMS."
+
+# The release is unsigned today. A signed MSI must still carry a valid signature: a
+# broken signature means the file changed after it was signed, so the script stops.
+# A zip cannot carry a signature, so the hash above is its whole check.
+if (-not $Zip) {
+    $signature = Get-AuthenticodeSignature -FilePath $file
+    if ($signature.Status -eq 'NotSigned') {
+        Write-Host 'This build is unsigned. The script checked its SHA256 only.'
+    }
+    elseif ($signature.Status -ne 'Valid') {
+        throw "The signature of '$asset' is '$($signature.Status)'. The script installed nothing. Download the file again from the release page."
+    }
+    else {
+        Write-Host "The publisher is $($signature.SignerCertificate.Subject)."
+    }
+}
 
 # ---- install --------------------------------------------------------------
 
