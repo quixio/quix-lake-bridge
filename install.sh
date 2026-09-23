@@ -1,10 +1,16 @@
 #!/usr/bin/env sh
-# Downloads and installs the bridge on Linux and on macOS.
+# Downloads and installs the bridge on Linux.
 #
-# The script reads the machine, picks one of the four asset names, downloads it
-# from the release page and installs it. It asks nothing.
+# The script reads the machine, picks the asset name, downloads it from the release
+# page and installs it. It asks nothing.
 #
-#   linux-x64     linux-arm64     osx-x64     osx-arm64
+#   linux-x64
+#
+# There is no linux-arm64 build yet, because no aarch64 build image exists. On Linux
+# aarch64 the script stops at once and names the supported platforms.
+#
+# The bridge does not support macOS yet. On a Mac the script stops at once and names
+# the supported platforms. On Windows, run install.ps1.
 #
 # On Linux with dpkg or rpm it takes the deb or the rpm, so the package manager
 # owns the file. Everywhere else it takes the tar.gz and copies the binary.
@@ -27,8 +33,8 @@ machine="$(uname -m)"
 
 case "$os" in
     Linux)  os_part="linux" ;;
-    Darwin) os_part="osx" ;;
-    *) fail "This script installs the bridge on Linux and on macOS. It read '$os'. On Windows, run install.ps1." ;;
+    Darwin) fail "The bridge does not support macOS yet. Supported: linux-x64, win-x64, win-arm64." ;;
+    *) fail "This script installs the bridge on Linux. It read '$os'. On Windows, run install.ps1." ;;
 esac
 
 case "$machine" in
@@ -38,6 +44,10 @@ case "$machine" in
 esac
 
 RUNTIME="${os_part}-${arch_part}"
+
+if [ "$RUNTIME" = "linux-arm64" ]; then
+    fail "There is no linux-arm64 build of the bridge yet. Supported: linux-x64, win-x64, win-arm64."
+fi
 echo "This machine is $RUNTIME."
 
 # ---- resolve the version and the asset ------------------------------------

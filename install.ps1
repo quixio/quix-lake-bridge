@@ -12,18 +12,34 @@
     and it starts it. It also registers the daily task \Quix\Bridge Update, which
     installs nothing unless config.yaml sets update.channel to stable.
 
+    The version comes from -Version. With no -Version, it comes from the
+    QUIX_BRIDGE_VERSION environment variable, like install.sh. With neither, the
+    script takes the newest release. A leading "v" is dropped, so "v0.1.0" and
+    "0.1.0" both work.
+
     usage:
         irm https://github.com/quixio/quix-lake-bridge/raw/main/install.ps1 | iex
         .\install.ps1 -Version 0.1.0
+        $env:QUIX_BRIDGE_VERSION = 'v0.1.0'; irm https://github.com/quixio/quix-lake-bridge/raw/main/install.ps1 | iex
 #>
 [CmdletBinding()]
 param(
-    [string]$Version = 'latest',
+    [string]$Version = '',
     [string]$Repo = 'quixio/quix-lake-bridge',
     [switch]$Zip
 )
 
 $ErrorActionPreference = 'Stop'
+
+# The parameter wins, then the environment, then 'latest'. The release tag carries a
+# v and the asset name does not, so the number goes into both without it.
+function Resolve-BridgeVersion([string]$Requested, [string]$FromEnvironment) {
+    $value = if ($Requested.Trim()) { $Requested.Trim() } elseif ($FromEnvironment.Trim()) { $FromEnvironment.Trim() } else { 'latest' }
+    if ($value -eq 'latest') { return $value }
+    return $value -replace '^[vV]', ''
+}
+
+$Version = Resolve-BridgeVersion $Version $env:QUIX_BRIDGE_VERSION
 
 # ---- read the machine, and name the runtime -------------------------------
 
@@ -102,6 +118,8 @@ if ($Zip) {
     Expand-Archive -Path $file -DestinationPath $target -Force
     Write-Host "The script wrote $target."
     Write-Host "Run '$target\quix-bridge.exe service install' from an administrator prompt."
+    # A zip install changes no PATH, so the hint names the full path.
+    Write-Host "Done. Run '$target\quix-bridge.exe status' to read the state."
 }
 else {
     Write-Host 'Run the MSI. Windows asks for administrator rights.'
@@ -111,6 +129,6 @@ else {
         throw "The MSI failed with code $($process.ExitCode). The log is at $log."
     }
     Write-Host 'The MSI installed the bridge and started the service.'
+    Write-Host 'The MSI added the bridge folder to the system PATH.'
+    Write-Host "Done. Open a new shell, because this shell keeps the old PATH. Then run 'quix-bridge status' to read the state."
 }
-
-Write-Host "Done. Run 'quix-bridge status' to read the state."
