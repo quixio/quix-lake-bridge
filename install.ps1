@@ -43,11 +43,33 @@ $Version = Resolve-BridgeVersion $Version $env:QUIX_BRIDGE_VERSION
 
 # ---- read the machine, and name the runtime -------------------------------
 
-$machine = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
-switch ($machine) {
-    'X64'   { $runtime = 'win-x64' }
-    'Arm64' { $runtime = 'win-arm64' }
-    default { throw "The bridge has no build for the architecture '$machine'." }
+# Windows PowerShell 5.1 runs on .NET Framework. There, RuntimeInformation can be
+# missing, or its OSArchitecture can be empty. So an empty string is a valid answer.
+function Read-OsArchitecture {
+    $info = 'System.Runtime.InteropServices.RuntimeInformation' -as [type]
+    if (-not $info) { return '' }
+    try { return [string]$info::OSArchitecture } catch { return '' }
+}
+
+# The first value that names a known machine wins. A 32-bit shell on 64-bit Windows
+# sets PROCESSOR_ARCHITECTURE to x86, also on ARM64. PROCESSOR_ARCHITEW6432 then
+# names the real machine.
+function Resolve-BridgeRuntime([string[]]$Values) {
+    foreach ($value in $Values) {
+        switch ("$value".Trim()) {
+            { $_ -in 'X64', 'AMD64' } { return 'win-x64' }
+            'ARM64' { return 'win-arm64' }
+        }
+    }
+    return $null
+}
+
+$seen = @((Read-OsArchitecture), $env:PROCESSOR_ARCHITEW6432, $env:PROCESSOR_ARCHITECTURE)
+$runtime = Resolve-BridgeRuntime $seen
+if (-not $runtime) {
+    throw ("The bridge has no build for this machine. OSArchitecture='$($seen[0])', " +
+        "PROCESSOR_ARCHITEW6432='$($seen[1])', PROCESSOR_ARCHITECTURE='$($seen[2])'. " +
+        "Download the MSI by hand from https://github.com/$Repo/releases.")
 }
 Write-Host "This machine is $runtime."
 
