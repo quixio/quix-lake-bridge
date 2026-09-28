@@ -86,6 +86,38 @@ $extension = if ($Zip) { 'zip' } else { 'msi' }
 $asset = "quix-bridge-$Version-$runtime.$extension"
 $url = "https://github.com/$Repo/releases/download/v$Version/$asset"
 
+# ---- the first start, for the person who watches this shell -------------------
+
+# The MSI's own BridgeTrayStart action starts the tray right after the install, but
+# only when somebody could see the install (UILevel 3 or higher). This script always
+# runs msiexec with /qn, so that action never fires, and the tray waited for the next
+# sign in. This script starts the tray and the console itself, the same de-elevated
+# way the MSI would: explorer.exe runs the target in the signed-in person's own
+# session, never with this script's own administrator token.
+function Resolve-BridgeTrayShortcut([string]$StartupFolder) {
+    return Join-Path $StartupFolder 'Quix Lake Bridge.lnk'
+}
+
+function Start-DeElevated([string]$Target) {
+    Start-Process -FilePath (Join-Path $env:WINDIR 'explorer.exe') -ArgumentList $Target
+}
+
+# A silent deployment tool can run this script with nobody watching, and it can run
+# with no desktop at all. Only a real interactive session gets the tray and the
+# browser; 'quix-bridge status' still works with neither.
+function Test-InteractiveInstall {
+    return [Environment]::UserInteractive -and $env:SESSIONNAME -and $env:SESSIONNAME -ne 'Services'
+}
+
+# Reads the one-time login URL from a completed 'quix-bridge ui' run. The URL is a
+# credential, so this reads only the in-memory text the command printed, and the
+# caller never writes that text to $log or to this screen.
+function Read-UiLoginUrl([string]$UiOutput) {
+    $line = ($UiOutput -split "`r?`n") | Where-Object { $_ -like 'URL:*' } | Select-Object -First 1
+    if (-not $line) { return $null }
+    return $line.Substring(5).Trim()
+}
+
 $work = Join-Path ([System.IO.Path]::GetTempPath()) ("quix-bridge-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 $file = Join-Path $work $asset
@@ -152,5 +184,29 @@ else {
     }
     Write-Host 'The MSI installed the bridge and started the service.'
     Write-Host 'The MSI added the bridge folder to the system PATH.'
+
+    if (Test-InteractiveInstall) {
+        $shortcut = Resolve-BridgeTrayShortcut ([Environment]::GetFolderPath('CommonStartup'))
+        if (Test-Path $shortcut) {
+            Start-DeElevated $shortcut
+            Write-Host 'Started the tray for this session.'
+        }
+
+        $exe = Join-Path $env:ProgramFiles 'Quix\Bridge\quix-bridge.exe'
+        if (Test-Path $exe) {
+            try {
+                $uiOutput = & $exe ui 2>$null | Out-String
+                $url = Read-UiLoginUrl $uiOutput
+                if ($url) {
+                    Start-DeElevated $url
+                    Write-Host 'Opened the console in the browser.'
+                }
+            }
+            catch {
+                # Best effort. 'quix-bridge status' still works with no browser open.
+            }
+        }
+    }
+
     Write-Host "Done. Open a new shell, because this shell keeps the old PATH. Then run 'quix-bridge status' to read the state."
 }
